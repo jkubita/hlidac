@@ -1,0 +1,60 @@
+name: Hlídač Bakaláři
+
+on:
+  schedule:
+    # Časy jsou v UTC. 5:30 UTC = 6:30 v zimě / 7:30 v létě.
+    - cron: '30 5 * * 1-5'
+    # 11:20 UTC = 12:20 v zimě / 13:20 v létě; běží až do večera
+    - cron: '20 11 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      test:
+        description: 'Jen zkušební spuštění (ověří přihlášení a pošle zkušební notifikaci)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: hlidac
+  cancel-in-progress: false
+
+jobs:
+  hlidej:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install requests
+
+      - name: Načtení stavu z minula
+        uses: actions/cache/restore@v4
+        with:
+          path: bakalari_stav.json
+          key: stav-${{ github.run_id }}
+          restore-keys: stav-
+
+      - name: Hlídání
+        env:
+          BAKA_URL: ${{ secrets.BAKA_URL }}
+          BAKA_USER: ${{ secrets.BAKA_USER }}
+          BAKA_PASS: ${{ secrets.BAKA_PASS }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          INTERVAL: '90'
+          RUN_MINUTES: '330'
+        run: |
+          if [ "${{ inputs.test }}" = "true" ]; then
+            python bakalari_hlidac.py --test
+          else
+            python bakalari_hlidac.py
+          fi
+
+      - name: Uložení stavu
+        if: always() && hashFiles('bakalari_stav.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: bakalari_stav.json
+          key: stav-${{ github.run_id }}-${{ github.run_attempt }}
